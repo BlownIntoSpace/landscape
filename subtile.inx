@@ -5,9 +5,16 @@
     
     <dependency type="extension">org.inkscape.output.svg.inkscape</dependency>
     
-    <param name="directory" type="string" gui-text="Directory to save images to:">~/</param>
-    <param name="image" type="string" gui-text="Image name (without extension):">tiled</param>
-    <param name="ignore" type="bool" gui-text="Ignore these settings and use export hints">false</param>
+    <param name="directory" type="path" mode="folder" gui-text="Directory to save tiles to:">~/</param>
+    <param name="zoom" type="int" min="1" max="20" gui-text="Maximum zoom:">5</param>
+    <param name="filetype" type="optiongroup" appearance="combo"
+        gui-text="Tile filetype">
+        <option value="webp" default="true">webp</option>
+        <option value="png">png</option>
+        <option value="jpg">jpg</option>
+    </param>
+    
+    <param name="tilesize" type="int" min="1" max="1024" gui-text="Tile size (WIDTHxHEIGHT) in pixels:">256</param>
     
     <effect needs-live-preview="false">
                 <object-type>all</object-type>
@@ -17,7 +24,7 @@
     </effect>
     
     <script>
-        <command location="inx" interpreter="python">guillotine.py</command>
+        <command location="inx" interpreter="python">subtile.py</command>
     </script>
     
 </inkscape-extension>
