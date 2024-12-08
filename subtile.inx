@@ -6,6 +6,7 @@
     <dependency type="extension">org.inkscape.output.svg.inkscape</dependency>
     
     <param name="directory" type="path" mode="folder" gui-text="Directory to save tiles to:">~/</param>
+    <param name="split_layers" type="boolean" gui-text="Split layers into separate files">true</param>
     <param name="zoom" type="int" min="1" max="20" gui-text="Maximum zoom:">5</param>
     <param name="filetype" type="optiongroup" appearance="combo"
         gui-text="Tile filetype">
@@ -15,6 +16,7 @@
     </param>
     
     <param name="tilesize" type="int" min="1" max="1024" gui-text="Tile size (WIDTHxHEIGHT) in pixels:">256</param>
+    <param name="ignore_transparent" type="boolean" gui-text="Don't save transparent tiles.">true</param>
     
     <effect needs-live-preview="false">
                 <object-type>all</object-type>

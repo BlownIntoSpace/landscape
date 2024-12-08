@@ -18,33 +18,162 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 #
 """
-Subtile
+A script that slices an svg file into multiple tiles, of a given size and zoom level.
+
+The intended usecase is exporting a large svg into tiles for use with programs like leaflet.js
+where a large image is broken into a directory structure e.g. (z/x/y.*) indicating the
+zoom level and x/y coordinates of the tile.
+
+Similar functionality could be achieved with the 'Export Slices' extension,
+but that requires manual placement of the slices, which can be tedious and prone to error for large images.
+It could also be achived simply by exporting the image to a large png, then slicing it with 
+a program like gdal2tiles, but that requires additional setup and is not always reliable, and also places
+a limit on the maximum zoom level achivable as the image is rasterized before slicing, and inkscape can only 
+export pngs up to around 32000x32000 pixels in size.
+
+This script instead attepts to perform the slicing directly on the svg file, and export each
+slice as an individual image.
+
 """
 
 import os
 import locale
+import numpy as np
+from pathlib import Path
+from PIL import Image
+
 
 import inkex
 from inkex.command import inkscape
 from inkex.localization import inkex_gettext as _
 
+# Enable debugging for this extension
+DEBUG = True
+
+class Tile:
+    def __init__(self, x:int, y:int, z:int, size:int,inkscape_area:str):
+        self.x = x
+        self.y = y
+        self.z = z
+        self.size = size
+        self.inkscape_area = inkscape_area
+
+    def __str__(self):
+        return f"{self.x}:{self.y}:{self.z}:{self.size}"
+
+    def __repr__(self):
+        return f"{self.x}:{self.y}:{self.z}:{self.size}"
+
 
 class Subtile(inkex.EffectExtension):
     """Exports an SVG file as a set of raster tiles of given size and zoom."""
 
-    def add_arguments(self, pars):
-        pars.add_argument("--directory", type=str, default="~/")
-        pars.add_argument("--zoom", type=int, default=5)
-        pars.add_argument("--filetype", type=str, default="webp")
-        pars.add_argument("--tilesize", type=int, default=256)
+    def __init__(self):
+        super(Subtile,self).__init__()
 
+    def add_arguments(self, pars):
+        pars.add_argument("--directory", type=Path, default=Path("~"), help="Directory to save the tiles to")
+        pars.add_argument("--split_layers",type=inkex.Boolean, default=False, help="Split the SVG into into separate tilesets for each layer.")
+        pars.add_argument("--zoom", default=5, help="Maximum zoom level to export to.")
+        pars.add_argument("--filetype", default="webp", help="Filetype to save the tiles as.")
+        pars.add_argument("--tilesize", default=256, help="Size of the tiles in pixels.")
+        pars.add_argument("--ignore_transparent", type=inkex.Boolean, default=True, help="Ignore transparent tiles.")
+    
+
+    def get_image_properties(self):
+        self.width = float(inkscape(self.options.input_file, "--query-width"))
+        self.height = float(inkscape(self.options.input_file, "--query-height"))
+
+        # Attempt to center the image bounds
+        self.x_origin = 0
+        self.y_origin = 0
+
+        self.size = max(self.width,self.height)
+
+        if self.width > self.height:
+            self.y_origin = (self.height - self.width) / 2
+        elif self.height > self.width:
+            self.x_origin = (self.width - self.height) / 2
+        
+    def format_filename(self, x:int, y:int, z:int) -> Path:
+        return self.options.directory.joinpath(f"{z}/{x}/{y}.{self.options.filetype}")
+
+    def generate_tile_specs(self):
+        tiles = []
+        for z in range(0,self.options.zoom):
+            n = self.size / 2**z
+            x_index = 0
+            y_index = 0
+            for x in np.arange(self.x_origin,self.x_origin + self.size,n):
+                for y in np.arange(self.y_origin,self.y_origin + self.size,n):
+                    tiles.append(
+                        Tile(x=x_index,
+                            y=y_index,
+                            z=z,
+                            size=self.options.tilesize,
+                            inkscape_area=f"{x}:{y}:{x+n}:{y+n}"
+                            )
+                        )
+                    y_index += 1
+                x_index += 1
+
+        print(tiles)
+        return tiles
+
+
+
+
+    def export_tile(self, tile:Tile):
+        filename = self.format_filename(tile.x,tile.y,tile.z)
+        filename.parent.mkdir(parents=True,exist_ok=True)
+        svg_file = self.options.input_file
+        kwargs = {
+            "export-overwrite": True,
+            "export-filename": self.options.directory.joinpath(f"{tile.z}/{tile.x}/{tile.y}.png"),
+            "export-area": tile.inkscape_area,
+            "export-width": self.options.tilesize,
+            "export-height": self.options.tilesize,
+        }
+
+        inkscape(svg_file,**kwargs)
+        image = Image.open(kwargs["export-filename"])
+
+        # Delete transparent images if the option is set
+        if image.getextrema()[-1] == (0,0) and self.options.ignore_transparent:
+            os.remove(kwargs["export-filename"])
+            return
+        elif self.options.filetype != "png": # Convert to the desired format
+            image.save(filename.as_posix())
+            os.remove(kwargs["export-filename"])
+        debug(f"Tile saved as {filename}")
 
     def effect(self):
-        pass
+        # Create path if it doesnt exist        
+        self.options.directory.mkdir(exist_ok=True)
+        if any(self.options.directory.iterdir()): # Warn the user if the directory is not empty
+            inkex.utils.debug(f"Warning! Directory not empty, files may be overwritten.")
+        
+        # Initialise image properties
+        self.get_image_properties()
+
+        tile_specs = self.generate_tile_specs()
+
+
+        # print(zoom_levels[1])
+        for tile in tile_specs:
+            self.export_tile(tile)
+        
+    
+
+
 
         
 
-
+def debug(msg):
+    """Print a debug message if DEBUG is True."""
+    if DEBUG:
+        inkex.utils.debug(msg)
 
 if __name__ == "__main__":
     Subtile().run()
+
