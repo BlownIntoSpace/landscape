@@ -59,10 +59,10 @@ class Tile:
         self.inkscape_area = inkscape_area
 
     def __str__(self):
-        return f"{self.x}:{self.y}:{self.z}:{self.size}"
+        return f"Tile(x:{self.x}, y:{self.y}, z:{self.z}, size:{self.size})"
 
     def __repr__(self):
-        return f"{self.x}:{self.y}:{self.z}:{self.size}"
+        return f"Tile(x:{self.x}, y:{self.y}, z:{self.z}, size:{self.size})"
 
 
 class Subtile(inkex.EffectExtension):
@@ -95,16 +95,18 @@ class Subtile(inkex.EffectExtension):
         elif self.height > self.width:
             self.x_origin = (self.width - self.height) / 2
         
-    def format_filename(self, x:int, y:int, z:int) -> Path:
-        return self.options.directory.joinpath(f"{z}/{x}/{y}.{self.options.filetype}")
+    def format_filename(self, x:int, y:int, z:int,filetype=None) -> Path:
+        if filetype is None:
+            filetype = self.options.filetype
+        return self.options.directory.joinpath(f"{z}/{x}/{y}.{filetype}")
 
     def generate_tile_specs(self):
         tiles = []
         for z in range(0,self.options.zoom):
             n = self.size / 2**z
             x_index = 0
-            y_index = 0
             for x in np.arange(self.x_origin,self.x_origin + self.size,n):
+                y_index = 0
                 for y in np.arange(self.y_origin,self.y_origin + self.size,n):
                     tiles.append(
                         Tile(x=x_index,
@@ -129,7 +131,7 @@ class Subtile(inkex.EffectExtension):
         svg_file = self.options.input_file
         kwargs = {
             "export-overwrite": True,
-            "export-filename": self.options.directory.joinpath(f"{tile.z}/{tile.x}/{tile.y}.png"),
+            "export-filename": self.format_filename(tile.x,tile.y,tile.z,"png"),
             "export-area": tile.inkscape_area,
             "export-width": self.options.tilesize,
             "export-height": self.options.tilesize,
