@@ -38,6 +38,7 @@ slice as an individual image.
 
 import os
 import locale
+import threading
 import numpy as np
 from pathlib import Path
 from PIL import Image
@@ -48,7 +49,7 @@ from inkex.command import inkscape
 from inkex.localization import inkex_gettext as _
 
 # Enable debugging for this extension
-DEBUG = True
+DEBUG = False
 
 class Tile:
     def __init__(self, x:int, y:int, z:int, size:int,inkscape_area:str):
@@ -74,15 +75,17 @@ class Subtile(inkex.EffectExtension):
     def add_arguments(self, pars):
         pars.add_argument("--directory", type=Path, default=Path("~"), help="Directory to save the tiles to")
         pars.add_argument("--split_layers",type=inkex.Boolean, default=False, help="Split the SVG into into separate tilesets for each layer.")
-        pars.add_argument("--zoom", default=5, help="Maximum zoom level to export to.")
+        pars.add_argument("--zoom", default=5,type=int, help="Maximum zoom level to export to.")
         pars.add_argument("--filetype", default="webp", help="Filetype to save the tiles as.")
-        pars.add_argument("--tilesize", default=256, help="Size of the tiles in pixels.")
+        pars.add_argument("--tilesize", default=256, type=int,help="Size of the tiles in pixels.")
         pars.add_argument("--ignore_transparent", type=inkex.Boolean, default=True, help="Ignore transparent tiles.")
     
 
     def get_image_properties(self):
-        self.width = float(inkscape(self.options.input_file, "--query-width"))
-        self.height = float(inkscape(self.options.input_file, "--query-height"))
+        svg = inkex.load_svg(self.options.input_file).getroot()
+
+        self.width = svg.viewport_height
+        self.height = svg.viewport_width
 
         # Attempt to center the image bounds
         self.x_origin = 0
@@ -94,6 +97,7 @@ class Subtile(inkex.EffectExtension):
             self.y_origin = (self.height - self.width) / 2
         elif self.height > self.width:
             self.x_origin = (self.width - self.height) / 2
+        self.options.input_file
         
     def format_filename(self, x:int, y:int, z:int,filetype=None) -> Path:
         if filetype is None:
@@ -119,9 +123,11 @@ class Subtile(inkex.EffectExtension):
                     y_index += 1
                 x_index += 1
 
-        print(tiles)
         return tiles
 
+    def export_tiles(self,tiles:list[Tile]):
+        for tile in tiles:
+            self.export_tile(tile)
 
 
 
@@ -152,24 +158,32 @@ class Subtile(inkex.EffectExtension):
     def effect(self):
         # Create path if it doesnt exist        
         self.options.directory.mkdir(exist_ok=True)
-        if any(self.options.directory.iterdir()): # Warn the user if the directory is not empty
-            inkex.utils.debug(f"Warning! Directory not empty, files may be overwritten.")
+        # if any(self.options.directory.iterdir()): # Warn the user if the directory is not empty
+        #     inkex.utils.debug(f"Warning! Directory not empty, files may be overwritten.")
         
         # Initialise image properties
         self.get_image_properties()
 
+        thread_count = 4
+
         tile_specs = self.generate_tile_specs()
 
+        batch_tiles = [tile_specs[i::thread_count] for i in range(thread_count)]
 
-        # print(zoom_levels[1])
-        for tile in tile_specs:
-            self.export_tile(tile)
-        
+        threads = []
     
-
-
-
+        for tiles in batch_tiles:
+            threads.append(threading.Thread(target=self.export_tiles, args=(tiles,)))
         
+        for thread in threads:
+            thread.start()
+
+        for thread in threads:
+            thread.join()
+
+        return self.options.input_file
+        
+
 
 def debug(msg):
     """Print a debug message if DEBUG is True."""
